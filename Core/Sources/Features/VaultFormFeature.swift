@@ -106,10 +106,7 @@ public struct VaultFormView: View {
     public var body: some View {
         NavigationStack {
             Form {
-                TextField("Name", text: Binding(
-                    get: { store.draft.name },
-                    set: { store.send(.binding(.set(\.draft.name, $0))) }
-                ))
+                TextField("Name", text: $store.draft.name)
             }
             .navigationTitle(store.isEditing ? "Edit Vault" : "New Vault")
             #if os(iOS)

@@ -22,6 +22,8 @@ public struct AppFeature {
 
         public init() {}
 
+        // Hand-written because `@FetchAll`/`@ObservationStateIgnored` use accessor
+        // macros that block synthesized Equatable; compare the observable members.
         public static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.vaults == rhs.vaults && lhs.destination == rhs.destination
         }
