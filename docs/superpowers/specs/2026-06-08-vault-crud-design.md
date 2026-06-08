@@ -8,14 +8,11 @@
 
 Replace the current inline add/delete of vaults in `AppFeature` with proper CRUD:
 a shared create/edit form, trailing swipe actions for edit and delete, and an
-alert confirmation before deletion. Build it as a clean, idiomatic template that
-other entities (Things, etc.) will copy later — **no generic abstraction yet**
-(YAGNI; extract once a second entity makes the real duplication visible).
+alert confirmation before deletion. Build it concretely for Vaults — no generic
+or shared abstraction.
 
 ## Decisions
 
-- **Reuse strategy:** build Vaults concretely as a copyable template; extract
-  shared abstractions later.
 - **Form presentation:** a modal **sheet** for both create and edit. Same view
   and save logic; the only difference is how state is seeded.
 - **Row tap:** tapping a row (outside the swipe) does nothing — reserved for a
@@ -119,4 +116,3 @@ form.
 ## Out of scope
 
 - Things CRUD and the vault → Things drill-down.
-- Any generic/parameterized CRUD abstraction.
