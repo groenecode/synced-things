@@ -1,3 +1,4 @@
+import CloudKit
 import ComposableArchitecture
 import Foundation
 import SQLiteData
@@ -22,6 +23,12 @@ public struct VaultDetailFeature {
 
         @Presents public var destination: Destination.State?
 
+        /// The CloudKit share for this vault, set once ``Action/shareButtonTapped``
+        /// succeeds. Non-nil drives presentation of `CloudSharingView`, Apple's
+        /// participant-management sheet. Sharing UI is iOS/iPadOS only — on native
+        /// macOS the share button is hidden, so this simply stays `nil` there.
+        public var sharedRecord: SharedRecord?
+
         public init(vault: Vault) {
             self.vault = vault
             // `id` is the tie-breaker: concurrent inserts can yield equal ranks,
@@ -39,6 +46,9 @@ public struct VaultDetailFeature {
         case editButtonTapped(Thing)
         case moved(IndexSet, Int)
         case operationFailed(String)
+        case shareButtonTapped
+        case shareDismissed
+        case shareResponse(SharedRecord)
     }
 
     @Reducer
@@ -54,6 +64,7 @@ public struct VaultDetailFeature {
 
     @Dependency(\.defaultDatabase) var database
     @Dependency(\.date.now) var now
+    @Dependency(\.defaultSyncEngine) var syncEngine
 
     public init() {}
 
@@ -97,7 +108,12 @@ public struct VaultDetailFeature {
                 // neighbors, then generate a key between them. Only the moved
                 // thing's `rank` changes — a single-record write that plays well
                 // with sync — so its neighbors keep their existing keys.
-                guard let sourceIndex = source.first else { return .none }
+                // `source` was computed by SwiftUI against the rows it last
+                // rendered; `things` can shrink underneath us between render and
+                // this reduce if a sync write (or delete cascade) arrives mid-drag.
+                // Bounds-check before indexing so a stale index can't trap.
+                guard let sourceIndex = source.first, sourceIndex < state.things.count
+                else { return .none }
                 let moved = state.things[sourceIndex]
                 var reordered = state.things
                 reordered.move(fromOffsets: source, toOffset: destination)
@@ -125,6 +141,32 @@ public struct VaultDetailFeature {
 
             case let .operationFailed(message):
                 state.destination = .alert(.operationFailed(message))
+                return .none
+
+            case .shareButtonTapped:
+                // `share(record:)` is idempotent: it returns the existing share
+                // if the vault is already shared, so the same button both invites
+                // the first participant and re-opens the management sheet later.
+                // It throws if the vault hasn't synced to iCloud yet (or iCloud is
+                // unavailable); we surface that through the existing alert.
+                let syncEngine = syncEngine
+                let vault = state.vault
+                return .run { send in
+                    let sharedRecord = try await syncEngine.share(record: vault) { share in
+                        share[CKShare.SystemFieldKey.title] =
+                            vault.name.isEmpty ? "Untitled Vault" : vault.name
+                    }
+                    await send(.shareResponse(sharedRecord))
+                } catch: { error, send in
+                    await send(.operationFailed(error.localizedDescription))
+                }
+
+            case .shareDismissed:
+                state.sharedRecord = nil
+                return .none
+
+            case let .shareResponse(sharedRecord):
+                state.sharedRecord = sharedRecord
                 return .none
             }
         }
@@ -200,6 +242,18 @@ public struct VaultDetailView: View {
                     Label("Add Thing", systemImage: "plus")
                 }
             }
+            // Sharing uses `CloudSharingView`, which is only available where UIKit
+            // is (iPhone/iPad). The user opted out of a native-macOS path, so the
+            // button is simply absent there.
+            #if os(iOS)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        store.send(.shareButtonTapped)
+                    } label: {
+                        Label("Share Vault", systemImage: "person.crop.circle.badge.plus")
+                    }
+                }
+            #endif
         }
         .overlay {
             if store.things.isEmpty {
@@ -218,5 +272,17 @@ public struct VaultDetailView: View {
         .alert(
             $store.scope(state: \.destination?.alert, action: \.destination.alert)
         )
+        // Present Apple's share sheet while a `SharedRecord` is set. Dismissing it
+        // (swipe-down, Done, or Stop Sharing) clears the record via `.shareDismissed`.
+        #if os(iOS)
+            .sheet(
+                item: Binding(
+                    get: { store.sharedRecord },
+                    set: { if $0 == nil { store.send(.shareDismissed) } }
+                )
+            ) { sharedRecord in
+                CloudSharingView(sharedRecord: sharedRecord)
+            }
+        #endif
     }
 }
