@@ -13,8 +13,15 @@ extension DependencyValues {
     public mutating func bootstrapDatabase() throws {
         var configuration = Configuration()
         configuration.prepareDatabase { db in
-            // Required so that `SyncMetadata` (share status, etc.) is queryable.
-            try db.attachMetadatabase()
+            // Attaches the iCloud sync metadatabase so `SyncMetadata` (share
+            // status, etc.) is queryable. It needs a CloudKit container, which
+            // is unavailable on unsigned simulator builds — make it best-effort
+            // so the local database still opens.
+            do {
+                try db.attachMetadatabase()
+            } catch {
+                logger.error("metadatabase unavailable, sync metadata disabled: \(error)")
+            }
             #if DEBUG
                 db.trace(options: .profile) {
                     guard
@@ -65,11 +72,21 @@ extension DependencyValues {
         // Only run the iCloud sync engine in the live app. In tests and Xcode
         // previews we want a local, deterministic database with no background
         // CloudKit activity.
+        //
+        // Sync is best-effort: the local database is the source of truth and the
+        // app is fully usable without it. Starting the engine can fail for
+        // reasons outside our control — an unsigned simulator build has no
+        // CloudKit entitlement, the device may not be signed into iCloud, etc.
+        // Those must not take down the app, so we log and continue local-only.
         if context == .live {
-            defaultSyncEngine = try SyncEngine(
-                for: database,
-                tables: Vault.self, Thing.self
-            )
+            do {
+                defaultSyncEngine = try SyncEngine(
+                    for: database,
+                    tables: Vault.self, Thing.self
+                )
+            } catch {
+                logger.error("iCloud sync unavailable, continuing local-only: \(error)")
+            }
         }
     }
 }
