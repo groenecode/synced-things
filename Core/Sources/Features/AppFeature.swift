@@ -75,15 +75,7 @@ public struct AppFeature {
                 return .none
 
             case let .operationFailed(message):
-                state.destination = .alert(
-                    AlertState {
-                        TextState("Something Went Wrong")
-                    } actions: {
-                        ButtonState(role: .cancel) { TextState("OK") }
-                    } message: {
-                        TextState(message)
-                    }
-                )
+                state.destination = .alert(.operationFailed(message))
                 return .none
             }
         }

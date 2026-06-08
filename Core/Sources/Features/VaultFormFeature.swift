@@ -41,8 +41,8 @@ public struct VaultFormFeature {
     }
 
     @Dependency(\.defaultDatabase) var database
-    @Dependency(\.date.now) var now
     @Dependency(\.dismiss) var dismiss
+    @Dependency(\.date.now) var now
 
     public init() {}
 
@@ -65,7 +65,10 @@ public struct VaultFormFeature {
                 // Capture Sendable primitives and rebuild the draft inside the
                 // effect; stamp `createdAt` from the clock only when creating.
                 let id = state.draft.id
-                let name = state.draft.name
+                // Persist the trimmed name so what we validated (see
+                // `isSaveDisabled`) is what we store — no stray surrounding
+                // whitespace, and a blank cell falls back to "Untitled Vault".
+                let name = state.draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
                 let createdAt = id == nil ? now : state.draft.createdAt
                 let database = database
                 let dismiss = dismiss
@@ -82,13 +85,7 @@ public struct VaultFormFeature {
                 }
 
             case let .saveFailed(message):
-                state.alert = AlertState {
-                    TextState("Something Went Wrong")
-                } actions: {
-                    ButtonState(role: .cancel) { TextState("OK") }
-                } message: {
-                    TextState(message)
-                }
+                state.alert = .operationFailed(message)
                 return .none
             }
         }
