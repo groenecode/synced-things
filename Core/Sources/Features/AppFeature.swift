@@ -7,7 +7,8 @@ import SwiftUI
 ///
 /// Reads flow through `@FetchAll`, which observes the SQLite database (and thus
 /// reflects iCloud sync automatically). Writes go through the `defaultDatabase`
-/// dependency so they can be controlled in tests.
+/// dependency so they can be controlled in tests. Write failures are surfaced to
+/// the user as an alert rather than swallowed.
 @Reducer
 public struct AppFeature {
     @ObservableState
@@ -16,15 +17,22 @@ public struct AppFeature {
         @FetchAll(Vault.order { $0.createdAt.desc() })
         public var vaults: [Vault]
 
+        @Presents public var alert: AlertState<Action.Alert>?
+
         public init() {}
     }
 
     public enum Action {
         case addVaultButtonTapped
+        case alert(PresentationAction<Alert>)
         case deleteVaults(IndexSet)
+        case operationFailed(String)
+
+        public enum Alert {}
     }
 
     @Dependency(\.defaultDatabase) var database
+    @Dependency(\.date.now) var now
 
     public init() {}
 
@@ -32,21 +40,43 @@ public struct AppFeature {
         Reduce { state, action in
             switch action {
             case .addVaultButtonTapped:
+                let database = database
+                let now = now
                 return .run { _ in
                     try await database.write { db in
-                        try Vault.insert { Vault.Draft(name: "New Vault") }.execute(db)
+                        try Vault.insert { Vault.Draft(name: "New Vault", createdAt: now) }
+                            .execute(db)
                     }
+                } catch: { error, send in
+                    await send(.operationFailed(error.localizedDescription))
                 }
 
+            case .alert:
+                return .none
+
             case let .deleteVaults(indexSet):
+                let database = database
                 let ids = indexSet.map { state.vaults[$0].id }
                 return .run { _ in
                     try await database.write { db in
                         try Vault.where { $0.id.in(ids) }.delete().execute(db)
                     }
+                } catch: { error, send in
+                    await send(.operationFailed(error.localizedDescription))
                 }
+
+            case let .operationFailed(message):
+                state.alert = AlertState {
+                    TextState("Something Went Wrong")
+                } actions: {
+                    ButtonState(role: .cancel) { TextState("OK") }
+                } message: {
+                    TextState(message)
+                }
+                return .none
             }
         }
+        .ifLet(\.$alert, action: \.alert)
     }
 }
 
@@ -83,5 +113,6 @@ public struct AppView: View {
                 }
             }
         }
+        .alert($store.scope(state: \.alert, action: \.alert))
     }
 }
