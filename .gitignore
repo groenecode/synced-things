@@ -1,0 +1,24 @@
+# Tuist
+.build/
+Tuist/.build/
+*.xcodeproj
+*.xcworkspace
+Derived/
+graph.png
+
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# macOS
+.DS_Store
+
+# Local machine-specific Makefile config (Team ID, etc.)
+Local.mk
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
