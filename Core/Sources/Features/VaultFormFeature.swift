@@ -62,22 +62,20 @@ public struct VaultFormFeature {
 
             case .saveButtonTapped:
                 guard !state.isSaveDisabled else { return .none }
-                // Capture Sendable primitives and rebuild the draft inside the
-                // effect; stamp `createdAt` from the clock only when creating.
-                let id = state.draft.id
-                // Persist the trimmed name so what we validated (see
-                // `isSaveDisabled`) is what we store — no stray surrounding
-                // whitespace, and a blank cell falls back to "Untitled Vault".
-                let name = state.draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                let createdAt = id == nil ? now : state.draft.createdAt
+                // Pass the whole draft through to `upsert` (rather than
+                // rebuilding it field-by-field) so columns added to `Vault`
+                // later are never silently dropped on save. Persist the trimmed
+                // name so what we validated (see `isSaveDisabled`) is what we
+                // store; stamp `createdAt` from the clock only when creating.
+                var draft = state.draft
+                draft.name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                if draft.id == nil { draft.createdAt = now }
+                let savedDraft = draft
                 let database = database
                 let dismiss = dismiss
                 return .run { _ in
                     try await database.write { db in
-                        try Vault.upsert {
-                            Vault.Draft(id: id, name: name, createdAt: createdAt)
-                        }
-                        .execute(db)
+                        try Vault.upsert { savedDraft }.execute(db)
                     }
                     await dismiss()
                 } catch: { error, send in

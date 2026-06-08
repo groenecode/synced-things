@@ -17,3 +17,8 @@ public struct Vault: Identifiable, Equatable, Sendable {
 }
 
 extension Vault.Draft: Equatable {}
+
+// All of Draft's members (UUID?, String, Date) are Sendable value types, so the
+// generated `Draft` is safe to send across concurrency domains — e.g. captured
+// in a `.run` effect to be saved. The `@Table` macro does not add this for us.
+extension Vault.Draft: Sendable {}
