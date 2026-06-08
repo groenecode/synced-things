@@ -44,6 +44,20 @@ private struct SeededGenerator: RandomNumberGenerator {
         #expect(key > "a1")
     }
 
+    @Test func emptyStringBoundsAreTreatedAsNil() {
+        // An empty `rank` is "no position" (the column default), not a real key.
+        // Records can arrive empty from older data or iCloud sync; treating "" as
+        // a bound must behave like `nil` rather than trapping in `getIntegerPart`.
+        #expect(FractionalIndex.keyBetween("", nil) == "a0") // append after all-empty
+        #expect(FractionalIndex.keyBetween(nil, "") == "a0") // prepend before empty
+        #expect(FractionalIndex.keyBetween("", "") == "a0") // both empty
+        // A real lower bound with an empty upper bound appends after it, and the
+        // result sorts after any empty-rank record (since "" sorts first).
+        let afterReal = FractionalIndex.keyBetween("a0", "")
+        #expect(afterReal == "a1")
+        #expect(afterReal > "")
+    }
+
     @Test func appendingStaysShort() {
         var keys: [String] = []
         var last: String?

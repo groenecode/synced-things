@@ -35,13 +35,21 @@ public enum FractionalIndex {
     /// for `b` to generate a key after everything (append), and `nil` for both
     /// for the very first key in an empty list. `a` must sort before `b`.
     ///
+    /// An empty-string bound is treated as `nil`: an empty `rank` is "no
+    /// position", not a real key, and a real key (`"A…"`/`"a…"`) is never empty.
+    /// Records can arrive with an empty `rank` (the column default) from older
+    /// data or iCloud sync; without this, appending after such a record would
+    /// call `getIntegerPart("")` and trap.
+    ///
     /// If `a >= b` (e.g. two items ended up tied via a concurrent sync insert),
     /// this degrades gracefully by returning a key just after `a` rather than
     /// trapping.
     public static func keyBetween(_ a: String?, _ b: String?) -> String {
+        let a = a.flatMap { $0.isEmpty ? nil : $0 }
+        let b = b.flatMap { $0.isEmpty ? nil : $0 }
         if let a, let b, a >= b { return keyBetween(a, nil) }
 
-        if a == nil {
+        guard let a else {
             guard let b else { return "a" + String(zero) }
             let ib = getIntegerPart(b)
             let fb = String(b.dropFirst(ib.count))
@@ -56,15 +64,13 @@ public enum FractionalIndex {
             return res
         }
 
-        let a = a!
-        if b == nil {
+        guard let b else {
             let ia = getIntegerPart(a)
             let fa = String(a.dropFirst(ia.count))
             if let i = incrementInteger(ia) { return i }
             return ia + midpoint(fa, nil)
         }
 
-        let b = b!
         let ia = getIntegerPart(a)
         let fa = String(a.dropFirst(ia.count))
         let ib = getIntegerPart(b)
