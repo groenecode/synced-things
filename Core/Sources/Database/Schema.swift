@@ -54,7 +54,7 @@ extension DependencyValues {
                   "id" TEXT PRIMARY KEY NOT NULL ON CONFLICT REPLACE DEFAULT (uuid()),
                   "vaultID" TEXT NOT NULL REFERENCES "vaults"("id") ON DELETE CASCADE,
                   "text" TEXT NOT NULL DEFAULT '',
-                  "position" INTEGER NOT NULL DEFAULT 0,
+                  "rank" TEXT NOT NULL DEFAULT '',
                   "updatedAt" TEXT NOT NULL DEFAULT (datetime('now'))
                 ) STRICT
                 """)

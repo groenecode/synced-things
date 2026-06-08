@@ -3,7 +3,17 @@ import Foundation
 import SQLiteData
 import SwiftUI
 
-/// Root feature: lists the user's vaults and drives create/edit/delete.
+/// The navigable destinations pushed onto ``AppFeature``'s navigation stack.
+/// Tapping a vault drills into its ``VaultDetailFeature``.
+@Reducer
+public enum AppPath {
+    case vaultDetail(VaultDetailFeature)
+}
+
+extension AppPath.State: Equatable {}
+
+/// Root feature: lists the user's vaults, drives create/edit/delete, and drills
+/// into a vault's ``Thing``s via a navigation stack.
 ///
 /// Reads flow through `@FetchAll`, which observes the SQLite database (and thus
 /// reflects iCloud sync automatically), so the list refreshes itself after any
@@ -19,6 +29,7 @@ public struct AppFeature {
         public var vaults: [Vault]
 
         @Presents public var destination: Destination.State?
+        public var path = StackState<AppPath.State>()
 
         public init() {}
     }
@@ -29,6 +40,7 @@ public struct AppFeature {
         case destination(PresentationAction<Destination.Action>)
         case editButtonTapped(Vault)
         case operationFailed(String)
+        case path(StackActionOf<AppPath>)
     }
 
     @Reducer
@@ -77,9 +89,13 @@ public struct AppFeature {
             case let .operationFailed(message):
                 state.destination = .alert(.operationFailed(message))
                 return .none
+
+            case .path:
+                return .none
             }
         }
         .ifLet(\.$destination, action: \.destination)
+        .forEach(\.path, action: \.path)
     }
 }
 
@@ -113,23 +129,29 @@ public struct AppView: View {
     }
 
     public var body: some View {
-        NavigationStack {
+        NavigationStack(
+            path: $store.scope(state: \.path, action: \.path)
+        ) {
             List {
                 ForEach(store.vaults) { vault in
-                    Text(vault.name.isEmpty ? "Untitled Vault" : vault.name)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            // Plain button tinted red — intentionally NOT
-                            // `role: .destructive`. Full swipe is disabled so it
-                            // can't bypass the confirmation alert.
-                            Button("Delete") {
-                                store.send(.deleteButtonTapped(vault))
-                            }
-                            .tint(.red)
-                            Button("Edit") {
-                                store.send(.editButtonTapped(vault))
-                            }
-                            .tint(.blue)
+                    NavigationLink(
+                        state: AppPath.State.vaultDetail(VaultDetailFeature.State(vault: vault))
+                    ) {
+                        Text(vault.name.isEmpty ? "Untitled Vault" : vault.name)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        // Plain button tinted red — intentionally NOT
+                        // `role: .destructive`. Full swipe is disabled so it
+                        // can't bypass the confirmation alert.
+                        Button("Delete") {
+                            store.send(.deleteButtonTapped(vault))
                         }
+                        .tint(.red)
+                        Button("Edit") {
+                            store.send(.editButtonTapped(vault))
+                        }
+                        .tint(.blue)
+                    }
                 }
             }
             .navigationTitle("Vaults")
@@ -157,6 +179,11 @@ public struct AppView: View {
             .alert(
                 $store.scope(state: \.destination?.alert, action: \.destination.alert)
             )
+        } destination: { store in
+            switch store.case {
+            case let .vaultDetail(detailStore):
+                VaultDetailView(store: detailStore)
+            }
         }
     }
 }
