@@ -15,3 +15,5 @@ public struct Vault: Identifiable, Equatable, Sendable {
     /// referentially-transparent sentinel rather than a live `Date()`.
     public var createdAt: Date = .distantPast
 }
+
+extension Vault.Draft: Equatable {}

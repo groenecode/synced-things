@@ -9,7 +9,7 @@ import SwiftUI
 @Reducer
 public struct VaultFormFeature {
     @ObservableState
-    public struct State {
+    public struct State: Equatable {
         @Presents public var alert: AlertState<Action.Alert>?
         public var draft: Vault.Draft
 
@@ -37,7 +37,7 @@ public struct VaultFormFeature {
         case saveButtonTapped
         case saveFailed(String)
 
-        public enum Alert {}
+        public enum Alert: Equatable {}
     }
 
     @Dependency(\.defaultDatabase) var database

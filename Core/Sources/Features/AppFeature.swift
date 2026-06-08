@@ -13,7 +13,7 @@ import SwiftUI
 @Reducer
 public struct AppFeature {
     @ObservableState
-    public struct State {
+    public struct State: Equatable {
         @ObservationStateIgnored
         @FetchAll(Vault.order { $0.createdAt.desc() })
         public var vaults: [Vault]
@@ -21,6 +21,10 @@ public struct AppFeature {
         @Presents public var destination: Destination.State?
 
         public init() {}
+
+        public static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.vaults == rhs.vaults && lhs.destination == rhs.destination
+        }
     }
 
     public enum Action {
@@ -37,7 +41,7 @@ public struct AppFeature {
         case form(VaultFormFeature)
 
         @CasePathable
-        public enum Alert {
+        public enum Alert: Equatable {
             case confirmDelete(Vault.ID)
         }
     }
@@ -90,6 +94,8 @@ public struct AppFeature {
         .ifLet(\.$destination, action: \.destination)
     }
 }
+
+extension AppFeature.Destination.State: Equatable {}
 
 extension AlertState where Action == AppFeature.Destination.Alert {
     /// Delete confirmation. The alert's Delete button uses `role: .destructive`
