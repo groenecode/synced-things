@@ -8,8 +8,10 @@ import SQLiteData
 /// eligible to be shared through CloudKit. Its associated ``Thing``s are shared
 /// along with it automatically.
 @Table
-public struct Vault: Identifiable, Equatable {
+public struct Vault: Identifiable, Equatable, Sendable {
     public let id: UUID
     public var name: String = ""
-    public var createdAt: Date = Date()
+    /// Set from the `\.date.now` dependency at write time; the default is a
+    /// referentially-transparent sentinel rather than a live `Date()`.
+    public var createdAt: Date = .distantPast
 }
