@@ -108,7 +108,12 @@ public struct VaultDetailFeature {
                 // neighbors, then generate a key between them. Only the moved
                 // thing's `rank` changes — a single-record write that plays well
                 // with sync — so its neighbors keep their existing keys.
-                guard let sourceIndex = source.first else { return .none }
+                // `source` was computed by SwiftUI against the rows it last
+                // rendered; `things` can shrink underneath us between render and
+                // this reduce if a sync write (or delete cascade) arrives mid-drag.
+                // Bounds-check before indexing so a stale index can't trap.
+                guard let sourceIndex = source.first, sourceIndex < state.things.count
+                else { return .none }
                 let moved = state.things[sourceIndex]
                 var reordered = state.things
                 reordered.move(fromOffsets: source, toOffset: destination)

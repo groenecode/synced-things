@@ -35,18 +35,21 @@ public enum FractionalIndex {
     /// for `b` to generate a key after everything (append), and `nil` for both
     /// for the very first key in an empty list. `a` must sort before `b`.
     ///
-    /// An empty-string bound is treated as `nil`: an empty `rank` is "no
-    /// position", not a real key, and a real key (`"A…"`/`"a…"`) is never empty.
-    /// Records can arrive with an empty `rank` (the column default) from older
-    /// data or iCloud sync; without this, appending after such a record would
-    /// call `getIntegerPart("")` and trap.
+    /// A bound that isn't a well-formed key is treated as `nil` ("no position").
+    /// The empty string (the `rank` column default) is the common case, but
+    /// records can also arrive from older data or a different app version over
+    /// iCloud sync carrying a `rank` this parser doesn't recognize. Rather than
+    /// trap deep inside `getIntegerPart`/`midpoint` on such input, we ignore the
+    /// malformed bound and position relative to the valid one — the same graceful
+    /// fallback we give the empty string. (Keys we generate are always valid, so
+    /// this only ever fires on foreign input; see ``isValidKey``.)
     ///
     /// If `a >= b` (e.g. two items ended up tied via a concurrent sync insert),
     /// this degrades gracefully by returning a key just after `a` rather than
     /// trapping.
     public static func keyBetween(_ a: String?, _ b: String?) -> String {
-        let a = a.flatMap { $0.isEmpty ? nil : $0 }
-        let b = b.flatMap { $0.isEmpty ? nil : $0 }
+        let a = a.flatMap { isValidKey($0) ? $0 : nil }
+        let b = b.flatMap { isValidKey($0) ? $0 : nil }
         if let a, let b, a >= b { return keyBetween(a, nil) }
 
         guard let a else {
@@ -85,6 +88,24 @@ public enum FractionalIndex {
     }
 
     // MARK: - Internals
+
+    /// Whether `key` is a well-formed order key that the generator functions can
+    /// process without trapping. Guards every assumption the internals make:
+    /// a valid integer head (`A-Z`/`a-z`), enough characters to cover the header
+    /// that head announces, all characters drawn from the base-62 alphabet, and
+    /// no trailing zero in the fractional part (an invariant the algorithm
+    /// maintains and that `midpoint` asserts). Keys produced by ``keyBetween``
+    /// always satisfy this; the check exists to neutralize foreign input.
+    static func isValidKey(_ key: String) -> Bool {
+        guard let head = key.first else { return false }
+        let isHead = (head >= "a" && head <= "z") || (head >= "A" && head <= "Z")
+        guard isHead else { return false }
+        let intLength = getIntegerLength(head)
+        guard key.count >= intLength else { return false }
+        guard key.allSatisfy({ indexOf[$0] != nil }) else { return false }
+        if key.count > intLength, key.last == zero { return false }
+        return true
+    }
 
     /// Returns a fractional digit-string strictly between `a` and `b` that does
     /// not end in a zero digit. `a` is treated as `0.aaa…`, `b` (when `nil`) as
