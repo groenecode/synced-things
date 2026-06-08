@@ -3,80 +3,105 @@ import Foundation
 import SQLiteData
 import SwiftUI
 
-/// Root feature: lists the user's vaults and supports creating and deleting them.
+/// Root feature: lists the user's vaults and drives create/edit/delete.
 ///
 /// Reads flow through `@FetchAll`, which observes the SQLite database (and thus
-/// reflects iCloud sync automatically). Writes go through the `defaultDatabase`
-/// dependency so they can be controlled in tests. Write failures are surfaced to
-/// the user as an alert rather than swallowed.
+/// reflects iCloud sync automatically), so the list refreshes itself after any
+/// write. Create and edit are handled by a presented ``VaultFormFeature``;
+/// delete is confirmed with an alert and performed here. Write failures are
+/// surfaced to the user as an alert rather than swallowed.
 @Reducer
 public struct AppFeature {
     @ObservableState
-    public struct State {
+    public struct State: Equatable {
         @ObservationStateIgnored
         @FetchAll(Vault.order { $0.createdAt.desc() })
         public var vaults: [Vault]
 
-        @Presents public var alert: AlertState<Action.Alert>?
+        @Presents public var destination: Destination.State?
 
         public init() {}
     }
 
     public enum Action {
-        case addVaultButtonTapped
-        case alert(PresentationAction<Alert>)
-        case deleteVaults(IndexSet)
+        case addButtonTapped
+        case deleteButtonTapped(Vault)
+        case destination(PresentationAction<Destination.Action>)
+        case editButtonTapped(Vault)
         case operationFailed(String)
+    }
 
-        public enum Alert {}
+    @Reducer
+    public enum Destination {
+        case alert(AlertState<Alert>)
+        case form(VaultFormFeature)
+
+        @CasePathable
+        public enum Alert: Equatable {
+            case confirmDelete(Vault.ID)
+        }
     }
 
     @Dependency(\.defaultDatabase) var database
-    @Dependency(\.date.now) var now
 
     public init() {}
 
     public var body: some ReducerOf<Self> {
         Reduce { state, action in
             switch action {
-            case .addVaultButtonTapped:
-                let database = database
-                let now = now
-                return .run { _ in
-                    try await database.write { db in
-                        try Vault.insert { Vault.Draft(name: "New Vault", createdAt: now) }
-                            .execute(db)
-                    }
-                } catch: { error, send in
-                    await send(.operationFailed(error.localizedDescription))
-                }
-
-            case .alert:
+            case .addButtonTapped:
+                state.destination = .form(VaultFormFeature.State())
                 return .none
 
-            case let .deleteVaults(indexSet):
+            case let .deleteButtonTapped(vault):
+                state.destination = .alert(.confirmDelete(vault))
+                return .none
+
+            case let .destination(.presented(.alert(.confirmDelete(id)))):
                 let database = database
-                let ids = indexSet.map { state.vaults[$0].id }
                 return .run { _ in
                     try await database.write { db in
-                        try Vault.where { $0.id.in(ids) }.delete().execute(db)
+                        try Vault.where { $0.id.eq(id) }.delete().execute(db)
                     }
                 } catch: { error, send in
                     await send(.operationFailed(error.localizedDescription))
                 }
 
+            case .destination:
+                return .none
+
+            case let .editButtonTapped(vault):
+                state.destination = .form(VaultFormFeature.State(vault: vault))
+                return .none
+
             case let .operationFailed(message):
-                state.alert = AlertState {
-                    TextState("Something Went Wrong")
-                } actions: {
-                    ButtonState(role: .cancel) { TextState("OK") }
-                } message: {
-                    TextState(message)
-                }
+                state.destination = .alert(.operationFailed(message))
                 return .none
             }
         }
-        .ifLet(\.$alert, action: \.alert)
+        .ifLet(\.$destination, action: \.destination)
+    }
+}
+
+extension AppFeature.Destination.State: Equatable {}
+
+extension AlertState where Action == AppFeature.Destination.Alert {
+    /// Delete confirmation. The alert's Delete button uses `role: .destructive`
+    /// (standard red alert button); the *swipe* delete button is plain + red.
+    static func confirmDelete(_ vault: Vault) -> Self {
+        AlertState {
+            TextState("Delete Vault?")
+        } actions: {
+            ButtonState(role: .destructive, action: .confirmDelete(vault.id)) {
+                TextState("Delete")
+            }
+            ButtonState(role: .cancel) {
+                TextState("Cancel")
+            }
+        } message: {
+            let name = vault.name.isEmpty ? "Untitled Vault" : vault.name
+            return TextState("\u{201C}\(name)\u{201D} and everything in it will be deleted.")
+        }
     }
 }
 
@@ -92,13 +117,25 @@ public struct AppView: View {
             List {
                 ForEach(store.vaults) { vault in
                     Text(vault.name.isEmpty ? "Untitled Vault" : vault.name)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            // Plain button tinted red — intentionally NOT
+                            // `role: .destructive`. Full swipe is disabled so it
+                            // can't bypass the confirmation alert.
+                            Button("Delete") {
+                                store.send(.deleteButtonTapped(vault))
+                            }
+                            .tint(.red)
+                            Button("Edit") {
+                                store.send(.editButtonTapped(vault))
+                            }
+                            .tint(.blue)
+                        }
                 }
-                .onDelete { store.send(.deleteVaults($0)) }
             }
             .navigationTitle("Vaults")
             .toolbar {
                 Button {
-                    store.send(.addVaultButtonTapped)
+                    store.send(.addButtonTapped)
                 } label: {
                     Label("Add Vault", systemImage: "plus")
                 }
@@ -112,7 +149,14 @@ public struct AppView: View {
                     )
                 }
             }
+            .sheet(
+                item: $store.scope(state: \.destination?.form, action: \.destination.form)
+            ) { formStore in
+                VaultFormView(store: formStore)
+            }
+            .alert(
+                $store.scope(state: \.destination?.alert, action: \.destination.alert)
+            )
         }
-        .alert($store.scope(state: \.alert, action: \.alert))
     }
 }
