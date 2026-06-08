@@ -45,6 +45,9 @@ struct VaultNavigationTests {
 @MainActor
 @Suite(.dependencies { try $0.bootstrapDatabase() })
 struct VaultCRUDIntegrationTests {
+    // These tests assert via a direct DB read rather than `store.state.vaults`,
+    // because the `@FetchAll` refresh is asynchronous and is NOT awaited by
+    // `store.finish()` — only the write effect is.
     @Dependency(\.defaultDatabase) var database
 
     @Test func savingNewVault_insertsWithStampedDate() async throws {
@@ -109,5 +112,23 @@ struct VaultCRUDIntegrationTests {
 
         let count = try await database.read { db in try Vault.fetchCount(db) }
         #expect(count == 0)
+    }
+
+    @Test func cancelingDelete_keepsVault() async throws {
+        let vaultID = UUID(0)
+        let vault = Vault(id: vaultID, name: "Work", createdAt: Date(timeIntervalSince1970: 0))
+        try await database.write { db in
+            try Vault.insert { vault }.execute(db)
+        }
+
+        let store = TestStore(initialState: AppFeature.State()) { AppFeature() }
+        store.exhaustivity = .off
+
+        await store.send(.deleteButtonTapped(vault))
+        await store.send(.destination(.dismiss))
+        await store.finish()
+
+        let count = try await database.read { db in try Vault.fetchCount(db) }
+        #expect(count == 1)
     }
 }
