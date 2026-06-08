@@ -16,6 +16,9 @@ xcuserdata/
 # macOS
 .DS_Store
 
+# Local machine-specific Makefile config (Team ID, etc.)
+Local.mk
+
 # Swift Package Manager
 .swiftpm/
 Package.resolved
